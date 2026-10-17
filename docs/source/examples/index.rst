@@ -30,6 +30,7 @@ Delft3D FM
    :maxdepth: 1
 
    dfm/tide_channel
+   dfm/tide_channel_parallel
    dfm/tide_channel_w_discharge
    dfm/tide_channel_w_discharge_multiveg
    dfm/organic_accretion
