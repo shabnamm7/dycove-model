@@ -212,13 +212,19 @@ Organic outputs are written under ``dflowfm/om_output``:
 
 * ``om_summary.csv`` contains species-level summaries for each ecological step.
 * ``om_yearYYYY_etsEEE.nc`` contains ``fveg``, ``agb_estimate``, and
-  ``organic_increment`` for every internal vegetation cell. Parallel runs use
-  rank-specific suffixes to avoid file collisions.
+  ``organic_increment`` for every internal vegetation cell. It also contains
+  ``organic_storage_after_transfer``, which is read back from the target
+  Delft3D-FM ``msed`` or ``bodsed`` storage immediately after the BMI transfer.
+  Parallel runs use rank-specific suffixes to avoid file collisions.
 
 The summary reports both the increment for each species and the cumulative
 increment applied since the start of the simulation. The NetCDF global
 attributes record the storage variable, target sediment, and target layer
-(``not_applicable`` for ``bodsed``).
+(``not_applicable`` for ``bodsed``). They also record the sequential
+``completed_ecological_step`` and identify the saved state as
+``state_phase = post_coupling``. These fields distinguish the completed-step
+count from the internal year/ETS labels and make the final transferred OM
+state persistent even when no later scheduled DFM map record is written.
 
 DYCOVE applies each OM increment after the corresponding hydrodynamic advance
 and vegetation update. Consequently, an increment is visible in the standard

@@ -29,6 +29,19 @@ def species(cohorts, params):
     )
 
 
+def persistent_engine(storage, species_units, n_active_cells):
+    """Return a BMI mock whose set_var result is visible to get_var."""
+    engine = MagicMock()
+    engine.veg = SimpleNamespace(species_list=species_units)
+    engine.get_cell_count.return_value = n_active_cells
+    bmi_storage = storage.copy()
+    engine.dflowfm.get_var.side_effect = lambda name: bmi_storage
+    engine.dflowfm.set_var.side_effect = lambda name, value: bmi_storage.__setitem__(
+        slice(None), value
+    )
+    return engine
+
+
 @pytest.mark.unit
 def test_dt_uses_ecological_timestep():
     assert OrganicAccretion().get_dt_years(simstate(10)) == pytest.approx(0.1)
@@ -183,10 +196,7 @@ def test_prefix_mapping_leaves_boundary_entries_unchanged():
     om = OrganicAccretion(target_sediment=1)
     p = [{"method": "rate", "om_rate_kg_m2_yr": 1.0}]
     sp = species([cohort(fraction=[0.2, 0.3])], p)
-    engine = MagicMock()
-    engine.veg = SimpleNamespace(species_list=[sp])
-    engine.get_cell_count.return_value = 2
-    engine.dflowfm.get_var.return_value = np.zeros((3, 1, 2))
+    engine = persistent_engine(np.zeros((3, 1, 2)), [sp], 2)
 
     om.update(engine, simstate(10))
 
@@ -200,15 +210,16 @@ def test_bodsed_update_has_no_layer_index():
     om = OrganicAccretion(bed_type="mixing_layer", target_sediment=1)
     p = [{"method": "rate", "om_rate_kg_m2_yr": 1.0}]
     sp = species([cohort(fraction=[0.2, 0.3])], p)
-    engine = MagicMock()
-    engine.veg = SimpleNamespace(species_list=[sp])
-    engine.get_cell_count.return_value = 2
-    engine.dflowfm.get_var.return_value = np.zeros((2, 2))
+    engine = persistent_engine(np.zeros((2, 2)), [sp], 2)
 
-    om.update(engine, simstate(10))
+    _, cell_output = om.update(engine, simstate(10))
 
     written = engine.dflowfm.set_var.call_args.args[1]
     np.testing.assert_allclose(written[:, 1], [0.02, 0.03])
+    np.testing.assert_allclose(
+        cell_output[0]["organic_storage_after_transfer"], [0.02, 0.03]
+    )
+    assert om.completed_ecological_steps == 1
 
 
 @pytest.mark.unit
@@ -252,10 +263,7 @@ def test_two_species_contributions_are_added():
     p = [{"method": "rate", "om_rate_kg_m2_yr": 1.0}]
     sp1 = species([cohort(fraction=[0.2, 0.3])], p)
     sp2 = species([cohort(fraction=[0.1, 0.4])], p)
-    engine = MagicMock()
-    engine.veg = SimpleNamespace(species_list=[sp1, sp2])
-    engine.get_cell_count.return_value = 2
-    engine.dflowfm.get_var.return_value = np.zeros((2, 1, 2))
+    engine = persistent_engine(np.zeros((2, 1, 2)), [sp1, sp2], 2)
 
     om.update(engine, simstate(10))
 
@@ -282,14 +290,7 @@ def test_cumulative_increment_persists_across_ecological_steps():
     om = OrganicAccretion(target_sediment=1)
     p = [{"method": "rate", "om_rate_kg_m2_yr": 1.0}]
     sp = species([cohort(fraction=[0.2, 0.3])], p)
-    engine = MagicMock()
-    engine.veg = SimpleNamespace(species_list=[sp])
-    engine.get_cell_count.return_value = 2
-    storage = np.zeros((2, 1, 2))
-    engine.dflowfm.get_var.side_effect = lambda name: storage
-    engine.dflowfm.set_var.side_effect = lambda name, value: storage.__setitem__(
-        slice(None), value
-    )
+    engine = persistent_engine(np.zeros((2, 1, 2)), [sp], 2)
 
     first, _ = om.update(engine, simstate(10))
     second, _ = om.update(engine, simstate(10))
@@ -298,3 +299,21 @@ def test_cumulative_increment_persists_across_ecological_steps():
     assert first[0]["cumulative_summed_areal_increment_kg_m2"] == pytest.approx(0.05)
     assert second[0]["summed_areal_increment_kg_m2"] == pytest.approx(0.05)
     assert second[0]["cumulative_summed_areal_increment_kg_m2"] == pytest.approx(0.10)
+    assert om.completed_ecological_steps == 2
+
+
+@pytest.mark.unit
+def test_bmi_readback_mismatch_is_rejected():
+    om = OrganicAccretion(target_sediment=1)
+    p = [{"method": "rate", "om_rate_kg_m2_yr": 1.0}]
+    sp = species([cohort(fraction=[0.2, 0.3])], p)
+    engine = MagicMock()
+    engine.veg = SimpleNamespace(species_list=[sp])
+    engine.get_cell_count.return_value = 2
+    unchanged = np.zeros((2, 1, 2))
+    engine.dflowfm.get_var.return_value = unchanged
+
+    with pytest.raises(RuntimeError, match="did not retain"):
+        om.update(engine, simstate(10))
+
+    assert om.completed_ecological_steps == 0

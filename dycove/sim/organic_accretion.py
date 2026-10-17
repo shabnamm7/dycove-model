@@ -51,6 +51,7 @@ class OrganicAccretion:
         self.verbose = verbose
         self.cell_indices = None if cell_indices is None else np.asarray(cell_indices)
         self.cumulative_added_mass = 0.0
+        self.completed_ecological_steps = 0
 
         self.allowed_methods = [
             "rate",
@@ -688,6 +689,7 @@ class OrganicAccretion:
             )
 
         total_added_mass = 0.0
+        storage_indices = None
 
         for species in species_units:
             cohorts = species.cohorts
@@ -896,6 +898,53 @@ class OrganicAccretion:
             storage_name,
             storage,
         )
+
+        # Read the BMI variable back immediately so the OM diagnostic records
+        # the state that Delft3D-FM actually retained, including after the
+        # final coupling step when no later scheduled map write occurs.
+        storage_after_transfer = engine.dflowfm.get_var(storage_name)
+        if storage_after_transfer is None:
+            raise RuntimeError(
+                "OrganicAccretion: BMI variable "
+                f"'{storage_name}' could not be read back after transfer."
+            )
+        storage_after_transfer = np.asarray(storage_after_transfer)
+        if storage_after_transfer.shape != storage.shape:
+            raise RuntimeError(
+                "OrganicAccretion: BMI read-back shape changed after transfer: "
+                f"expected {storage.shape}, got {storage_after_transfer.shape}."
+            )
+        if not np.allclose(
+            storage_after_transfer,
+            storage,
+            rtol=0.0,
+            atol=1.0e-12,
+            equal_nan=True,
+        ):
+            max_error = np.nanmax(np.abs(storage_after_transfer - storage))
+            raise RuntimeError(
+                "OrganicAccretion: BMI sediment storage did not retain the "
+                f"transferred OM state (maximum absolute error={max_error})."
+            )
+
+        self.completed_ecological_steps += 1
+
+        if organic_cell_records:
+            if storage_indices is None:
+                raise RuntimeError(
+                    "OrganicAccretion: active storage indices are unavailable "
+                    "for post-transfer output."
+                )
+            if storage_name == "msed":
+                target_storage = storage_after_transfer[
+                    storage_indices, self.target_layer, self.target_sediment
+                ]
+            else:
+                target_storage = storage_after_transfer[
+                    storage_indices, self.target_sediment
+                ]
+            for record in organic_cell_records:
+                record["organic_storage_after_transfer"] = target_storage.copy()
 
         if storage_name == "msed":
             after_total = np.nansum(

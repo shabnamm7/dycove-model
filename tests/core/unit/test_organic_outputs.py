@@ -15,6 +15,7 @@ def make_output_manager(tmp_path, storage):
         sediment_storage=storage,
         target_layer=0,
         target_sediment=2,
+        completed_ecological_steps=1,
     )
     engine.model_dir = tmp_path
     engine.is_parallel.return_value = False
@@ -28,6 +29,7 @@ def cell_records():
         "fveg": np.array([0.2, 0.4]),
         "agb_estimate": np.array([0.01, 0.02]),
         "delta_msed": np.array([0.001, 0.002]),
+        "organic_storage_after_transfer": np.array([0.101, 0.202]),
     }]
 
 
@@ -47,10 +49,16 @@ def test_organic_netcdf_uses_neutral_name_and_records_units(tmp_path):
         assert ds["fveg"].attrs["units"] == "1"
         assert ds["agb_estimate"].attrs["units"] == "kg m-2"
         assert ds["organic_increment"].attrs["units"] == "kg m-2"
+        assert ds["organic_storage_after_transfer"].attrs["units"] == "kg m-2"
         assert ds["cell"].attrs["units"] == "1"
+        np.testing.assert_allclose(
+            ds["organic_storage_after_transfer"], [0.101, 0.202]
+        )
         assert ds.attrs["storage"] == "msed"
         assert ds.attrs["target_layer"] == 0
         assert ds.attrs["target_sediment"] == 2
+        assert ds.attrs["completed_ecological_step"] == 1
+        assert ds.attrs["state_phase"] == "post_coupling"
 
 
 @pytest.mark.unit

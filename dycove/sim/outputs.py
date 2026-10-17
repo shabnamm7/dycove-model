@@ -191,6 +191,7 @@ class OutputManager:
                 "fveg": (("species", "cell"), np.stack([r["fveg"] for r in cell_records])),
                 "agb_estimate": (("species", "cell"), np.stack([r["agb_estimate"] for r in cell_records])),
                 "organic_increment": (("species", "cell"), np.stack([r["delta_msed"] for r in cell_records])),
+                "organic_storage_after_transfer": (("cell",), cell_records[0]["organic_storage_after_transfer"]),
             },
             coords={
                 "species": [r["species"] for r in cell_records],
@@ -199,6 +200,8 @@ class OutputManager:
             attrs={
                 "eco_year": simstate.eco_year,
                 "ets": simstate.ets,
+                "completed_ecological_step": self.organic.completed_ecological_steps,
+                "state_phase": "post_coupling",
                 "storage": self.organic.sediment_storage,
                 "target_layer": (
                     self.organic.target_layer
@@ -216,6 +219,10 @@ class OutputManager:
         )
         ds["organic_increment"].attrs.update(
             long_name="organic sediment areal-mass increment", units="kg m-2"
+        )
+        ds["organic_storage_after_transfer"].attrs.update(
+            long_name="post-transfer organic sediment areal-mass storage",
+            units="kg m-2",
         )
         ds["cell"].attrs.update(
             long_name="internal computational cell index", units="1"
